@@ -4,6 +4,16 @@ struct Begin {
     xid: u32,
 }
 
+impl Begin {
+    fn from_bytes(buf &[u8]) -> Self {
+        Self {
+            lsn: u64::from_be_bytes(buf[..7].try_into().unwrap()),
+            timestamp: u64::from_be_bytes(buf[8..15].try_into().unwrap()),
+            xid: u64::from_be_bytes(buf[16..19].try_into().unwrap()),
+        }
+    }
+}
+
 struct Message {
     xid: Option<u32>,
     flags: u8,
