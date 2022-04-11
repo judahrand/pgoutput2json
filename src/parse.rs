@@ -154,6 +154,7 @@ pub struct Origin {
 	name: String,
 }
 
+// TODO: Add support for more Postgres types
 // pub DecoderValue interface {
 // 	pgtype.TextDecoder
 // 	pgtype.Value
