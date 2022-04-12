@@ -189,7 +189,7 @@ pub enum LogicalReplicationMessage {
 
 // Parse a logical replication message.
 // See https://www.postgresql.org/docs/current/static/protocol-logicalrep-message-formats.html
-fn parse(src: &[u8]) -> Result<LogicalReplicationMessage, String> {
+pub fn parse(src: &[u8]) -> Result<LogicalReplicationMessage, String> {
     let msg_type = src[0] as char;
     let mut buf = &src[1..];
     match msg_type {
