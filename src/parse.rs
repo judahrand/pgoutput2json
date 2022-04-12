@@ -113,7 +113,7 @@ pub struct Relation {
 }
 
 impl Relation {
-    fn IsEmpty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.id == 0 && self.name.is_empty() && self.replica == 0 && self.columns.is_empty()
     }
 }
