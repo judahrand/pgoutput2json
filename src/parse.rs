@@ -56,11 +56,21 @@ impl Decoder for &[u8] {
         let mut data = Vec::<Tuple>::with_capacity(size as usize);
         for _ in 0..size {
             let flag = self.get_u8() as char;
-            let vsize = self.get_u32() as usize;
-            data.push(Tuple {
-                flag: flag as char,
-                value: (&self.chunk()[0..vsize]).to_vec(),
-            });
+            match flag {
+                'n' | 'u' => data.push(Tuple {
+                    flag: flag,
+                    value: None,
+                }),
+                't' => {
+                    let vsize = self.get_u32() as usize;
+                    data.push(Tuple {
+                        flag: flag as char,
+                        value: Some((&self.chunk()[..vsize]).to_vec()),
+                    });
+                    self.advance(vsize);
+                }
+                _ => panic!("Unknown data type flag: {:?}", flag),
+            }
         }
         data
     }
@@ -75,7 +85,7 @@ impl Decoder for &[u8] {
             data.push(Column {
                 key: self.get_bool(),
                 name: self.get_string(),
-                r#type: self.get_u32(),
+                pg_type: self.get_u32(),
                 mode: self.get_u32(),
             });
         }
@@ -85,31 +95,31 @@ impl Decoder for &[u8] {
 
 pub struct Begin {
     // The final LSN of the transaction.
-    lsn: u64,
+    pub lsn: u64,
     // Commit timestamp of the transaction. The value is in number of
     // microseconds since PostgreSQL epoch (2000-01-01).
-    timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<Utc>,
     // Xid of the transaction.
-    xid: i32,
+    pub xid: i32,
 }
 
 pub struct Commit {
-    flags: u8,
+    pub flags: u8,
     // The final LSN of the transaction.
-    lsn: u64,
+    pub lsn: u64,
     // The final LSN of the transaction.
-    transaction_lsn: u64,
-    timestamp: DateTime<Utc>,
+    pub transaction_lsn: u64,
+    pub timestamp: DateTime<Utc>,
 }
 
 pub struct Relation {
     // ID of the relation.
-    id: u32,
+    pub id: u32,
     // Namespace (empty string for pg_catalog).
-    namespace: String,
-    name: String,
-    replica: u8,
-    columns: Vec<Column>,
+    pub namespace: String,
+    pub name: String,
+    pub replica: u8,
+    pub columns: Vec<Column>,
 }
 
 impl Relation {
@@ -120,42 +130,42 @@ impl Relation {
 
 pub struct Type {
     // ID of the data type
-    id: u32,
-    namespace: String,
-    name: String,
+    pub id: u32,
+    pub namespace: String,
+    pub name: String,
 }
 
 pub struct Insert {
     /// ID of the relation corresponding to the ID in the relation message.
-    relation_id: u32,
+    pub relation_id: u32,
     // Identifies the following TupleData message as a new tuple.
-    new: bool,
-    row: Vec<Tuple>,
+    pub new: bool,
+    pub row: Vec<Tuple>,
 }
 
 pub struct Update {
     /// ID of the relation corresponding to the ID in the relation message.
-    relation_id: u32,
+    pub relation_id: u32,
     // Identifies the following TupleData message as a new tuple.
-    old: bool,
-    key: bool,
-    new: bool,
-    old_row: Vec<Tuple>,
-    row: Vec<Tuple>,
+    pub old: bool,
+    pub key: bool,
+    pub new: bool,
+    pub old_row: Option<Vec<Tuple>>,
+    pub row: Vec<Tuple>,
 }
 
 pub struct Delete {
     /// ID of the relation corresponding to the ID in the relation message.
-    relation_id: u32,
+    pub relation_id: u32,
     // Identifies the following TupleData message as a new tuple.
-    key: bool,
-    old: bool,
-    row: Vec<Tuple>,
+    pub key: bool,
+    pub old: bool,
+    pub row: Vec<Tuple>,
 }
 
 pub struct Origin {
-    lsn: u64,
-    name: String,
+    pub lsn: u64,
+    pub name: String,
 }
 
 // TODO: Add support for more Postgres types
@@ -165,15 +175,15 @@ pub struct Origin {
 // }
 
 pub struct Column {
-    key: bool,
-    name: String,
-    r#type: u32,
-    mode: u32,
+    pub key: bool,
+    pub name: String,
+    pub pg_type: u32,
+    pub mode: u32,
 }
 
 pub struct Tuple {
-    flag: char,
-    value: Vec<u8>,
+    pub flag: char,
+    pub value: Option<Vec<u8>>,
 }
 
 pub enum LogicalReplicationMessage {
@@ -225,14 +235,26 @@ pub fn parse(src: &[u8]) -> Result<LogicalReplicationMessage, String> {
             new: buf.get_bool(),
             row: buf.get_tupledata(),
         })),
-        'U' => Ok(LogicalReplicationMessage::Update(Update {
-            relation_id: buf.get_u32(),
-            key: buf.get_rowinfo('K'),
-            old: buf.get_rowinfo('O'),
-            old_row: buf.get_tupledata(),
-            new: buf.get_bool(),
-            row: buf.get_tupledata(),
-        })),
+        'U' => {
+            let relation_id = buf.get_u32();
+            let key = buf.get_rowinfo('K');
+            let old = buf.get_rowinfo('O');
+            let old_row: Option<Vec<Tuple>> = None;
+            if key || old {
+                let _old_row = buf.get_tupledata();
+            }
+            let new = buf.get_bool();
+            let row = buf.get_tupledata();
+
+            Ok(LogicalReplicationMessage::Update(Update {
+                relation_id: relation_id,
+                key: key,
+                old: old,
+                old_row: old_row,
+                new: new,
+                row: row,
+            }))
+        }
         'D' => Ok(LogicalReplicationMessage::Delete(Delete {
             relation_id: buf.get_u32(),
             key: buf.get_rowinfo('K'),
